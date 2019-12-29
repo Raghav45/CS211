@@ -1,0 +1,478 @@
+#include<stdio.h>
+#include<stdlib.h>
+#include<string.h>
+#include<math.h>
+struct block{
+
+
+  int valid;
+  unsigned long int tag;
+  unsigned long int timectr;
+
+};
+
+
+int hit(unsigned long int blockbits,unsigned long int setbits,int assoc,unsigned long int address,struct block *** cacheptr2){
+
+  struct block ** cache2 = *cacheptr2;
+  
+  
+  //unsigned long int  offset = (unsigned long int)fmod(address,(ldexp(1,blockbits)));
+  unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  unsigned long int set= (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  unsigned long int address3 = address2>>(unsigned long int)setbits;
+
+  for(int i=0;i<assoc;i++){
+    if(cache2[set][i].valid==1&&(address3==cache2[set][i].tag)){
+    	
+    	return 1;}
+  }
+	
+  return 0;
+}
+
+unsigned long int findmin(struct block *** cacheptr2,int set,int assoc){
+	struct block ** cache = *cacheptr2;
+
+	for(unsigned long int i=0;i<assoc;i++){
+		if(cache[set][i].valid==0){
+			return i;
+		}
+	}
+	unsigned long int min=0;
+
+	for(unsigned long int i=0;i<assoc;i++){
+		if(cache[set][i].timectr<=cache[set][min].timectr)min=i;
+	}
+	return min;
+}
+
+
+int main(int argc, char** argv){
+
+
+
+  FILE* fp = fopen(argv[6], "r");
+  if(fp == NULL){
+    printf("error");
+    return(0);
+  }
+
+  char* c;
+  unsigned long int cache_size = strtol(argv[1],&c,10);
+  char * d;
+  unsigned long int block_size = strtol(argv[2],&d,10);
+  char* policy = argv[3];
+  char* assocstring = argv[4];
+  char * e;
+  unsigned long int pref = strtol(argv[5],&e,10);
+
+  //fscanf(fp, "%d\n", &num);
+  unsigned long int assoc=0;
+  unsigned long int sets = 0;
+  if(strcmp(assocstring,"direct")==0){
+    assoc=1;
+    sets = cache_size/block_size;
+  }
+  else if(strcmp(assocstring,"assoc")==0){
+    sets=1;
+    assoc=cache_size/block_size;
+  }
+  else{
+
+    unsigned long int numlen = strlen(assocstring)-6;
+    char * temp= (char*) malloc (numlen*sizeof(char));
+
+    strcat(assocstring,"s");
+
+    strncpy(temp,&assocstring[6],numlen);
+
+    char* ptr;
+
+    assoc = strtol(assocstring+6,&ptr,10);
+
+    sets = cache_size/assoc/block_size;
+  }
+
+  if(block_size>cache_size){
+    printf("error");
+    return 0;
+  }
+  if(strcmp(policy,"fifo")!=0&&strcmp(policy,"lru")!=0){
+    printf("error");
+    return 0;
+}
+  if(fmod(log(cache_size)/log(2),1)!=0||fmod(log(block_size)/log(2),1)!=0||fmod(log(assoc)/log(2),1)!=0){
+  	printf("error");
+  	return 0;
+}
+
+
+
+  struct block ** cache = malloc(sets*sizeof(struct block *));
+  struct block ** precache = malloc(sets*sizeof(struct block *));
+  for(int i = 0; i< sets; i++){
+    cache[i] = malloc(assoc * sizeof(struct block));
+    precache[i] = malloc(assoc * sizeof(struct block));
+  }
+
+  for(int i = 0; i< sets; i++){
+  	for(int j=0;j<assoc;j++){
+    cache[i][j].tag = 0;
+    precache[i][j].tag = 0;
+    cache[i][j].timectr = 0;
+    precache[i][j].timectr = 0;
+    cache[i][j].valid = 0;
+    precache[i][j].valid = 0;
+    }
+  }
+
+  unsigned long int blockbits = log(block_size)/log(2);
+  unsigned long int setbits = log(sets)/log(2);
+
+  char op = 't';
+  unsigned long int address;
+  struct block *** cacheptr= &cache;
+  struct block *** precacheptr= &precache;
+
+  unsigned long int nonhits=0;
+  unsigned long int nonmisses=0;
+  unsigned long int nonreads=0;
+  unsigned long int nonwrites=0;
+
+  unsigned long int prehits=0;
+  unsigned long int premisses=0;
+  unsigned long int prereads=0;
+  unsigned long int prewrites=0;
+
+  unsigned long int nontime=0;
+  unsigned long int pretime=0;
+  
+int flag=1;
+
+while(fscanf(fp, "%c %lx\n", &op,&address) != EOF){
+
+if(op=='#'){
+	flag=0;
+	}
+if((flag==1)&&(strcmp(policy,"lru")==0)){
+	
+  if(op=='R'){
+
+        if(hit(blockbits,setbits,assoc,address,cacheptr)){
+			      nonhits++;
+			 unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  			unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  			unsigned long int address3 = address2>>(unsigned long int)setbits;
+        	for(int i=0;i<assoc;i++){
+        		if(cache[set][i].valid==1&&cache[set][i].tag==address3){
+        			cache[set][i].timectr=nontime;
+        			nontime++;
+        			}
+        	}
+
+        }
+        else{
+        	
+        	nonmisses++;
+        	nonreads++;
+        	unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  			unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  			unsigned long int address3 = address2>>(unsigned long int)setbits;
+        	unsigned long int min = findmin(cacheptr,set,assoc);
+        	cache[set][min].tag=address3;
+        	cache[set][min].valid=1;
+        	cache[set][min].timectr=nontime;
+        	nontime++;
+        }
+        if(hit(blockbits,setbits,assoc,address,precacheptr)){
+			      prehits++;
+			      unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  				unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  				unsigned long int address3 = address2>>(unsigned long int)setbits;
+        		for(int i=0;i<assoc;i++){
+        			if(precache[set][i].valid==1&&precache[set][i].tag==address3){
+        				precache[set][i].timectr=pretime;
+        				pretime++;
+        			}
+					}
+        }
+        else{
+        		
+        		premisses++;
+				
+				
+        		for(int i=0;i<pref+1;i++){
+
+        		 unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  				 unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  				 unsigned long int address3 = address2>>(unsigned long int)setbits;
+
+        		 if (hit(blockbits,setbits,assoc,address,precacheptr)==0){
+        		 	unsigned long int min = findmin(precacheptr,set,assoc);
+        	      precache[set][min].tag=address3;
+        	      precache[set][min].valid=1;
+        	      precache[set][min].timectr=pretime;
+        	      pretime++;
+        	      	
+        	      	
+        	      	
+        	      
+        		 	prereads++;
+        		 }
+        		 
+        		address+=block_size;
+
+        		}
+        		
+			
+
+        }
+
+      }
+
+
+
+    if(op=='W'){
+		if(hit(blockbits,setbits,assoc,address,cacheptr)){
+			     nonhits++;
+			     nonwrites++;
+			    unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  			unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  			unsigned long int address3 = address2>>(unsigned long int)setbits;
+        	for(int i=0;i<assoc;i++){
+        		if(cache[set][i].valid==1&&cache[set][i].tag==address3){
+        			cache[set][i].timectr=nontime;
+        			nontime++;
+        			}
+        	}
+				
+        }
+
+		else{
+			
+			
+			
+			unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  			unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  			unsigned long int address3 = address2>>(unsigned long int)setbits;
+			nonmisses++;
+			nonwrites++;
+			nonreads++;
+			unsigned long int min = findmin(cacheptr,set,assoc);
+			cache[set][min].tag=address3;
+        	cache[set][min].valid=1;
+        	cache[set][min].timectr=nontime;
+        	nontime++;
+
+		}
+
+		if(hit(blockbits,setbits,assoc,address,precacheptr)){
+			prewrites++;
+			prehits++;
+			unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  				unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  				unsigned long int address3 = address2>>(unsigned long int)setbits;
+        		for(int i=0;i<assoc;i++){
+        			if(precache[set][i].valid==1&&precache[set][i].tag==address3){
+        				precache[set][i].timectr=pretime;
+        				pretime++;
+        			}
+					}
+			
+		}
+		else{
+			premisses++;
+			prewrites++;
+				
+				
+        		for(int i=0;i<pref+1;i++){
+
+        		 unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  				 unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  				 unsigned long int address3 = address2>>(unsigned long int)setbits;
+
+        		 if (hit(blockbits,setbits,assoc,address,precacheptr)==0){
+        		 	unsigned long int min = findmin(precacheptr,set,assoc);
+        	      precache[set][min].tag=address3;
+        	      precache[set][min].valid=1;
+        	      precache[set][min].timectr=pretime;
+        	      
+        	      	
+        	      	
+        	      	
+        	      
+        		 	prereads++;
+        		 }
+        		 
+        		address+=block_size;
+
+        		}
+				pretime++;
+			}
+
+    }
+  }	
+	
+if((flag==1)&&(strcmp(policy,"fifo")==0)){
+	
+  if(op=='R'){
+
+        if(hit(blockbits,setbits,assoc,address,cacheptr)){
+			      nonhits++;
+			      
+
+        }
+        else{
+        	
+        	nonmisses++;
+        	nonreads++;
+        	unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  			unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  			unsigned long int address3 = address2>>(unsigned long int)setbits;
+        	unsigned long int min = findmin(cacheptr,set,assoc);
+        	cache[set][min].tag=address3;
+        	cache[set][min].valid=1;
+        	cache[set][min].timectr=nontime;
+        	nontime++;
+        }
+        if(hit(blockbits,setbits,assoc,address,precacheptr)){
+			      prehits++;
+			      
+					
+        }
+        else{
+        		
+        		premisses++;
+				
+				
+        		for(int i=0;i<pref+1;i++){
+
+        		 unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  				 unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  				 unsigned long int address3 = address2>>(unsigned long int)setbits;
+
+        		 if (hit(blockbits,setbits,assoc,address,precacheptr)==0){
+        		 	unsigned long int min = findmin(precacheptr,set,assoc);
+        	      precache[set][min].tag=address3;
+        	      precache[set][min].valid=1;
+        	      precache[set][min].timectr=pretime;
+        	      pretime++;
+        	      	
+        	      	
+        	      	
+        	      
+        		 	prereads++;
+        		 }
+        		 
+        		address+=block_size;
+
+        		}
+			
+
+        }
+
+      }
+
+
+
+    if(op=='W'){
+		if(hit(blockbits,setbits,assoc,address,cacheptr)){
+			     nonhits++;
+			     nonwrites++;
+			    
+				
+        }
+
+		else{
+			
+			
+			
+			unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  			unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  			unsigned long int address3 = address2>>(unsigned long int)setbits;
+			nonmisses++;
+			nonwrites++;
+			nonreads++;
+			unsigned long int min = findmin(cacheptr,set,assoc);
+			cache[set][min].tag=address3;
+        	cache[set][min].valid=1;
+        	cache[set][min].timectr=nontime;
+        	nontime++;
+
+		}
+
+		if(hit(blockbits,setbits,assoc,address,precacheptr)){
+			prewrites++;
+			prehits++;
+			
+			
+		}
+		else{
+			premisses++;
+			prewrites++;
+				
+				
+        		for(int i=0;i<pref+1;i++){
+
+        		 unsigned long int address2 = address>>(unsigned long int)blockbits;
+
+  				 unsigned long int set = (unsigned long int) fmod(address2,(ldexp(1,setbits)));
+  				 unsigned long int address3 = address2>>(unsigned long int)setbits;
+
+        		 if (hit(blockbits,setbits,assoc,address,precacheptr)==0){
+        		 	unsigned long int min = findmin(precacheptr,set,assoc);
+        	      precache[set][min].tag=address3;
+        	      precache[set][min].valid=1;
+        	      precache[set][min].timectr=pretime;
+        	      pretime++;
+        	      	
+        	      	
+        	      	
+        	      
+        		 	prereads++;
+        		 }
+        		 
+        		address+=block_size;
+
+        		}
+			
+			}
+
+    }
+  }
+  }
+  printf("no-prefetch\n");
+  printf("Memory reads: %ld\n",nonreads);
+  printf("Memory writes: %ld\n",nonwrites);
+  printf("Cache hits: %ld\n",nonhits);
+  printf("Cache misses: %ld\n",nonmisses);
+  printf("with-prefetch\n");
+  printf("Memory reads: %ld\n",prereads);
+  printf("Memory writes: %ld\n",prewrites);
+  printf("Cache hits: %ld\n",prehits);
+  printf("Cache misses: %ld\n",premisses);
+  for(int i=0;i<sets;i++){
+	free(cache[i]);
+	free(precache[i]);
+  }
+  free(cache);
+  free(precache);
+  fclose(fp);
+
+  return 0;
+
+
+}
